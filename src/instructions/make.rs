@@ -1,8 +1,15 @@
-use pinocchio::{account_info::AccountInfo, program_error::ProgramError,  pubkey::find_program_address, ProgramResult};
-use pinocchio_token::instructions::Transfer;
 use crate::{
-    AccountCheck,TryFrom, AssociatedTokenAccount, AssociatedTokenAccountCheck, AssociatedTokenAccountInit, Escrow, MintAccount,MintInterface, ProgramAccount, ProgramAccountInit, SignerAccount
+    instructions::helpers::{
+        AccountCheck, AssociatedTokenAccount, AssociatedTokenAccountCheck,
+        AssociatedTokenAccountInit, MintAccount, ProgramAccount, ProgramAccountInit, SignerAccount,
+    },
+    Escrow,
 };
+use pinocchio::{
+    account_info::AccountInfo, instruction::Seed, program_error::ProgramError,
+    pubkey::find_program_address, ProgramResult,
+};
+use pinocchio_token::instructions::Transfer;
 pub struct MakeAccounts<'a>{
     pub maker : &'a AccountInfo,
     pub escrow : &'a AccountInfo,
@@ -83,7 +90,7 @@ pub struct Make<'a>{
 }
 
 
-impl<'a> TryFrom<&'a [u8], &'a [AccountInfo]> for Make<'a>{
+impl<'a> TryFrom<(&'a [u8], &'a [AccountInfo])> for Make<'a>{
     type Error = ProgramError;
 
     fn try_from((data , accounts):(&'a[u8], &'a[AccountInfo]))-> Result<Self , Self::Error>{
@@ -91,34 +98,35 @@ impl<'a> TryFrom<&'a [u8], &'a [AccountInfo]> for Make<'a>{
         let instruction_data = MakeInstructionData::try_from(data)?;
 
         let(_, bump ) = find_program_address(
-            &[b"escrow".as_bytes(),
+            &[b"escrow",
             accounts.maker.key(),
             &instruction_data.seed.to_le_bytes()],
             &crate::ID,
         );
         let seed_binding = instruction_data.seed.to_le_bytes();
         let bump_binding = [bump];
-        let escrow_seeds = &[b"escrow".as_bytes(),
-         accounts.maker.key().as_ref(),
-          &seed_binding,
-           &bump_binding,
+        let escrow_seeds =  [
+            Seed::from(b"escrow"),
+         Seed::from(accounts.maker.key().as_ref()),
+          Seed::from(&seed_binding),
+           Seed::from(&bump_binding),
         ];
 
-        ProgramAccount::init::<Escrow>{
+        ProgramAccount::init::<Escrow>(
             accounts.maker,
             accounts.escrow,
             &escrow_seeds,
             Escrow::LEN,
-        }?; 
+        )?; 
 
-        AssociatedTokenAccount::init{
+        AssociatedTokenAccount::init(
             accounts.vault,
             accounts.mint_a,
             accounts.maker,
             accounts.escrow,
             accounts.token_program,
             accounts.system_program,
-        }?;
+        )?;
 
         Ok(Self{
             accounts,
@@ -130,7 +138,7 @@ impl<'a> TryFrom<&'a [u8], &'a [AccountInfo]> for Make<'a>{
 }
 
 impl<'a> Make<'a>{
-    pub const DISCRIMINATOR : &'a u8 = &[&0];
+    pub const DISCRIMINATOR : &'a u8 = &0;
 
     pub fn process(&mut self)->ProgramResult{
         let mut data = self.accounts.escrow.try_borrow_mut_data()?;
