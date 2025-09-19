@@ -6,6 +6,9 @@ pub use instructions::*;
  
 pub mod state;
 pub use state::*;
+
+pub mod errors;
+pub use errors::PinocchioError;
  
 // 22222222222222222222222222222222222222222222
 pub const ID: Pubkey = [
