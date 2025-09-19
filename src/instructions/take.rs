@@ -73,7 +73,7 @@ impl <'a> TryFrom<&'a [AccountInfo]> for Take<'a>{
             accounts.mint_a,
             accounts.token_program,
             accounts.system_program,
-        )
+        )?;
 
         AssociatedTokenAccount::init_if_needed(
             accounts.maker_ata_b,
@@ -89,7 +89,7 @@ impl <'a> TryFrom<&'a [AccountInfo]> for Take<'a>{
 
 impl <'a> Take<'a>{
 
-    pub const DISCRIMINATOR : U8 = &1;
+    pub const DISCRIMINATOR :  &'a u8 = &1;
 
     pub fn  process(&mut Self) -> ProgramResult{
         let data = self.accounts.escrow.try_borrow_data()?;
@@ -112,7 +112,7 @@ impl <'a> Take<'a>{
 
         let signer = Signer::from(&escrow_seeds);
 
-        let amount = TokenAccount::get_amount(self.accounts.vault)
+        let amount = TokenAccount::from_account_info(self.accounts.vault)?.amount();
 
         Transfer{
             from : self.accounts.vault,
@@ -125,14 +125,14 @@ impl <'a> Take<'a>{
             account : self.accounts.vault ,
             destination :self.accounts.maker,
             authority : self.accounts.escrow,
-        }invoke_signed(&[signer.clone()])?;
+        }.invoke_signed(&[signer.clone()])?;
 
         Transfer{
             from : self.accounts.taker_ata_b,
             to : self.accounts.maker_ata_b,
             authority: self.accounts.taker,
             amount:escrow.receive,
-        }invoke()?;
+        }.invoke()?;
 
         drop(data);
 

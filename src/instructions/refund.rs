@@ -1,14 +1,21 @@
-use pinocchio::instruction::Account;
-
-
-
-
-
-
-
-
-
-
+use crate::{
+    instructions::helpers::{
+        AccountCheck, AccountClose, AssociatedTokenAccount, AssociatedTokenAccountCheck,
+        AssociatedTokenAccountInit, MintAccount, ProgramAccount, SignerAccount,
+    },
+    Escrow,
+};
+use pinocchio::{
+    account_info::AccountInfo,
+    instruction::{Seed, Signer},
+    program_error::ProgramError,
+    pubkey::create_program_address,
+    ProgramResult,
+};
+use pinocchio_token::{
+    instructions::{CloseAccount, Transfer},
+    state::TokenAccount,
+};
 
 pub struct RefundAccounts<'a>{
     pub maker : &'a AccountInfo ,
@@ -24,7 +31,7 @@ pub struct RefundAccounts<'a>{
 impl <'a> TryFrom<& 'a [AccountInfo]> for RefundAccounts<'a>{
     type Error = ProgramError;
 
-    fn try_from(accounts : &'a [AccountInfo])-> Result<Self . Self::Error>{
+    fn try_from(accounts : &'a [AccountInfo])-> Result<Self , Self::Error>{
         let [maker , mint_a , escrow , vault , maker_ata_a , system_program, token_program , _] = accounts 
         else {
             return Err(ProgramError::NotEnoughAccountKeys);
@@ -33,8 +40,7 @@ impl <'a> TryFrom<& 'a [AccountInfo]> for RefundAccounts<'a>{
         SignerAccount::check(maker)?;
         ProgramAccount::check(escrow)?;
         MintInterface::check(mint_a)?;
-        ProgramAccount::check(vault)?;
-        AssociatedTokenAccount::check(vault , escrow , mint_a , token_program)?;
+        AssociatedTokenAccount::check(vault , escrow , mint_a , )?;
 
          Ok(Self{
          
@@ -57,16 +63,15 @@ pub struct Refund<'a>{
 impl <'a> TryFrom<&'a [AccountInfo]> for Refund<'a>{
     type Error = ProgramError;
 
-    fn try_from(accounts : <&'a [AccountInfo]>)->Result(Self,Self::Error){
+    fn try_from(accounts : &'a [AccountInfo])->Result<Self,Self::Error>{
         let accounts = RefundAccounts::try_from(accounts)?;
 
        
 
         AssociatedTokenAccount::init_if_needed(
-            accounts.maker_ata_b,
+            accounts.maker_ata_a,
             accounts.maker,
-            accounts.mint_b,
-            accounts.taker,
+            accounts.mint_a,
             accounts.token_program,
             accounts.system_program,
         )?;
@@ -77,9 +82,9 @@ impl <'a> TryFrom<&'a [AccountInfo]> for Refund<'a>{
 
 impl <'a> Refund<'a>{
 
-    pub const DISCRIMINATOR : U8 = &1;
+    pub const DISCRIMINATOR : &'a u8 = &2;  
 
-    pub fn  process(&mut Self) -> ProgramResult{
+    pub fn  process(&mut self) -> ProgramResult{
         let data = self.accounts.escrow.try_borrow_data()?;
         let escrow = Escrow::load(&data)?;
         
@@ -100,7 +105,15 @@ impl <'a> Refund<'a>{
 
         let signer = Signer::from(&escrow_seeds);
 
-        let amount = TokenAccount::get_amount(self.accounts.vault)
+        let amount = TokenAccount::from_account_info(self.accounts.vault)?.amount();
+
+         Transfer{
+            from : self.accounts.vault,
+            to : self.accounts.maker_ata_a,
+            authority: self.accounts.escrow,
+            amount:escrow.receive,
+        }invoke_signed(&[signer.clone()]    )?;
+
 
         CloseAccount {
             account : self.accounts.vault ,
@@ -108,13 +121,7 @@ impl <'a> Refund<'a>{
             authority : self.accounts.escrow,
         }invoke_signed(&[signer.clone()])?;
 
-        Transfer{
-            from : self.accounts.vault,
-            to : self.accounts.maker_ata_a,
-            authority: self.accounts.maker,
-            amount:escrow.receive,
-        }invoke()?;
-
+       
         drop(data);
 
         ProgramAccount::close(self.accounts.escrow , self.accounts.taker)?;
